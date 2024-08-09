@@ -13,7 +13,10 @@ with CwCheatIO("bin/cheats.txt") as file:
     file.seek(0x088E6D64)
     with open("bin/eboot.bin", "rb") as eboot:
         file.write(eboot.read())
-    file.file.write('_L 0xD147C22C 0x0000002e\n')
-    file.seek(0x09C7C22C)
-    with open("bin/game.bin", "rb") as game:
+    file.file.write('_L 0xE002002e 0x0147C22C\n')
+    file.seek(0x09C1EC70)
+    with open("bin/game_a.bin", "rb") as game:
+        file.write(game.read())
+    file.seek(0x09C750FC)
+    with open("bin/game_b.bin", "rb") as game:
         file.write(game.read())

@@ -27,9 +27,10 @@ y           equ     100
 last:
     .word       0
 add:
-    bne         s7, zero,  @fn
+    bne         v0, zero,  @fn
     nop
-    j           0x09C7C2E8
+    li          ra, 0x9C75104
+    j           0x09C953E0
     nop
 @fn:
     addiu       sp, sp, -0x8
@@ -45,7 +46,7 @@ add:
     sh          s1, 0x0(s0)
     li          s1, y
     sh          s1, 0x2(s0)
-    sh          s7, 0x4(s0)
+    sh          v0, 0x4(s0)
     li          s1, 0x1e12
     sh          s1, 0x6(s0)
 
@@ -60,7 +61,9 @@ add:
     sw          s1, 0x0(s0)
     lw          s0, 0x0(sp)
     lw          s1, 0x4(sp)
-    j           0x09C7C234
+
+    li          ra, 0x9C75104
+    j           0x09C953E0
     addiu       sp, sp, 0x8
 
 
