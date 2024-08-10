@@ -12,6 +12,9 @@ CHARWIDTH	equ		0x12C
 CHARHEIGHT	equ		0x12D
 CHARCOLOR	equ		0x12E
 printf      equ     0x088EAA64
+RED         equ     0x13
+YELLOW      equ     0x12
+WHITE       equ     0x00
 
 MAX_NUMBERS equ     10
 x           equ     100
@@ -43,12 +46,25 @@ add:
 
     ; create print data
     li          s1, x
-    sh          s1, 0x0(s0)
+    sh          s1, 0x0(s0)  ; x coordinate
     li          s1, y
-    sh          s1, 0x2(s0)
-    sh          v0, 0x4(s0)
-    li          s1, 0x1e12
-    sh          s1, 0x6(s0)
+    sh          s1, 0x2(s0)  ; y coordinate
+    sh          v0, 0x4(s0)  ; value
+    li          s1, 0x1e00   ; set to 30 frames
+    
+    ; set the color depending on damage
+    slti        at, v0, 100
+    beql        at, zero, @@other_colors
+    addiu       s1, RED
+    
+    slti        at, v0, 10
+    beql        at, zero, @@other_colors
+    addiu       s1, YELLOW
+@@white:
+    addiu       s1, WHITE
+@@other_colors:
+
+    sh          s1, 0x6(s0)  ; frames and color
 
     srl         at, at, 0x3
     addiu       s1, at, 0x1
