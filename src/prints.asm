@@ -12,6 +12,7 @@ CHARWIDTH	equ		0x12C
 CHARHEIGHT	equ		0x12D
 CHARCOLOR	equ		0x12E
 printf      equ     0x088EAA64
+
 RED         equ     0x13
 YELLOW      equ     0x12
 WHITE       equ     0x00
@@ -19,9 +20,14 @@ WHITE       equ     0x00
 MAX_NUMBERS equ     10
 x           equ     100
 y           equ     100
+DURATION    equ     30
 
 .macro liw,dest,value
-	lui			at, value / 0x10000
+    .if (value & 0xFFFF) > 0xFFFF/2
+        lui			at, value / 0x10000 + 0x1
+    .else
+        lui			at, value / 0x10000
+    .endif
 	lw			dest, value & 0xFFFF(at)
 .endmacro
 
@@ -36,21 +42,29 @@ add:
     j           0x09C953E0
     nop
 @fn:
-    addiu       sp, sp, -0x8
+    addiu       sp, sp, -0xC
     sw          s0, 0x0(sp)
     sw          s1, 0x4(sp)
-    liw         at, last
-    sll         at, at, 0x3
+    sw          t0, 0x8(sp)
+
+    liw         t0, last
+    sll         t0, t0, 0x3
     li          s0, printdata
-    addu        s0, s0, at
+    addu        s0, s0, t0
 
     ; create print data
-    li          s1, x
-    sh          s1, 0x0(s0)  ; x coordinate
-    li          s1, y
-    sh          s1, 0x2(s0)  ; y coordinate
+    jal         rng
+    nop
+    addiu       s1, s1, x
+    sh          s1, 0x0(s0)  ; saves random value to x coordinate
+
+    jal         rng
+    nop
+    addiu       s1, s1, y
+    sh          s1, 0x2(s0)  ; saves random value to y coordinate
+    
     sh          v0, 0x4(s0)  ; value
-    li          s1, 0x1e00   ; set to 30 frames
+    li          s1, DURATION << 8   ; set frames to duration
     
     ; set the color depending on damage
     slti        at, v0, 100
@@ -66,8 +80,8 @@ add:
 
     sh          s1, 0x6(s0)  ; frames and color
 
-    srl         at, at, 0x3
-    addiu       s1, at, 0x1
+    srl         t0, t0, 0x3
+    addiu       s1, t0, 0x1
     li          s0, MAX_NUMBERS
     blt         s1, s0, @ret
     nop
@@ -77,10 +91,11 @@ add:
     sw          s1, 0x0(s0)
     lw          s0, 0x0(sp)
     lw          s1, 0x4(sp)
+    lw          t0, 0x8(sp)
 
     li          ra, 0x9C75104
     j           0x09C953E0
-    addiu       sp, sp, 0x8
+    addiu       sp, sp, 0xC
 
 
 main:
@@ -132,6 +147,24 @@ end:
     li          ra, 0x088E6D6C
     j           0x088EBAB8
     nop
+
+seed:
+    .word       149
+
+rng:
+    liw         at, seed
+    sll         s1, at, 0x4
+    addu        s1, s1, at
+    addiu       s1, 0x16
+    andi        s1, s1, 0xFF
+    li          at, seed
+    sw          s1, 0x0(at)
+
+    srl         s1, s1, 0x4
+
+    jr          ra
+    nop
+
 fmt:
     .asciiz     "%d"
     .align      4
