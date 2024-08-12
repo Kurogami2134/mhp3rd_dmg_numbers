@@ -20,7 +20,10 @@ WHITE       equ     0x00
 MAX_NUMBERS equ     10
 x           equ     100
 y           equ     100
-DURATION    equ     30
+DURATION    equ     45
+BASE_SIZE   equ     0x10
+; bigger means less scaling, exponentially
+SCALING_PWR equ     5
 
 .macro liw,dest,value
     .if (value & 0xFFFF) > 0xFFFF/2
@@ -127,6 +130,13 @@ main:
 
     lb          a1, 0x6(at)
     sb          a1, CHARCOLOR(a0)
+
+    lh          a2, 0x4(at)
+    srl         a2, a2, SCALING_PWR
+    addiu       a2, a2, BASE_SIZE
+    sll         a1, a2, 8
+    or          a1, a1, a2
+    sh          a1, CHARWIDTH(a0)
     
     li          a1, fmt
     lh          a2, 0x4(at)
