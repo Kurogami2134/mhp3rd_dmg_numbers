@@ -34,7 +34,7 @@ SCALING_PWR equ     5
 	lw			dest, value & 0xFFFF(at)
 .endmacro
 
-.createfile "../bin/prints.bin", 0x8800500
+.createfile "../bin/prints.bin", 0x9F00000
 
 last:
     .word       0
@@ -100,10 +100,36 @@ add:
     j           0x09C953E0
     addiu       sp, sp, 0xC
 
+check_n_enable:
+    li          s0, 0x09C57CA0
+    li          at, 0x656D6167
+    lw          s0, 0x0(s0)
+    bne         s0, at, check_ret
+    nop
+    li          s0, 0x09C1EC70
+    lw          at, 0x0(s0)
+    bnel        at, zero, @@n_skip
+    sw          zero, 0x0(s0)
+@@n_skip:
+    li          s0, 0x09C750FC
+    li          at, 0x0A000000 | (add/4)
+    lw          a0, 0x0(s0)
+    beq         a0, at, @@add_skip
+    nop
+    sw          at, 0x0(s0)
+    sw          zero, 0x4(s0)
+@@add_skip:
+    j           check_ret
+    nop
 
 main:
     addiu       sp, sp, -0x4
     sw          s0, 0x0(sp)
+
+    j           check_n_enable
+    nop
+
+check_ret:
     
     li          s0, MAX_NUMBERS
 
