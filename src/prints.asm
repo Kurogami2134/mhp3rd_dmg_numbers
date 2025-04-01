@@ -12,15 +12,15 @@ CHARWIDTH	equ		0x12C
 CHARHEIGHT	equ		0x12D
 CHARCOLOR	equ		0x12E
 printf      equ     0x088EAA64
+ViewMatrix  equ     0x09B486B0
+
 
 RED         equ     0x13
 YELLOW      equ     0x12
 WHITE       equ     0x00
 
 MAX_NUMBERS equ     10
-x           equ     100
-y           equ     100
-DURATION    equ     45
+DURATION    equ     15
 BASE_SIZE   equ     0x10
 ; bigger means less scaling, exponentially
 SCALING_PWR equ     5
@@ -34,21 +34,25 @@ SCALING_PWR equ     5
 	lw			dest, value & 0xFFFF(at)
 .endmacro
 
-.createfile "../bin/prints.bin", 0x9F00000
+.macro lib,dest,value
+	lui			at, value / 0x10000
+	lb			dest, value & 0xFFFF(at)
+.endmacro
+
+.createfile "../bin/prints.bin", 0x09F00400
 
 last:
     .word       0
 add:
-    bne         v0, zero,  @fn
+    beq         v0, zero,  @skip_add
     nop
-    li          ra, 0x9C75104
-    j           0x09C953E0
-    nop
-@fn:
-    addiu       sp, sp, -0xC
-    sw          s0, 0x0(sp)
-    sw          s1, 0x4(sp)
-    sw          t0, 0x8(sp)
+    addiu       sp, sp, -0x18
+    sw          s0, 0x00(sp)
+    sw          s1, 0x04(sp)
+    sw          t0, 0x08(sp)
+    sw          a0, 0x0C(sp)
+    sw          a1, 0x10(sp)
+    sw          a2, 0x14(sp)
 
     liw         t0, last
     sll         t0, t0, 0x3
@@ -56,14 +60,18 @@ add:
     addu        s0, s0, t0
 
     ; create print data
+create_print:
+    jal         get_coords
+    nop
     jal         rng
     nop
-    addiu       s1, s1, x
+    addu        s1, s1, a1
     sh          s1, 0x0(s0)  ; saves random value to x coordinate
 
     jal         rng
     nop
-    addiu       s1, s1, y
+    addu        s1, s1, a2
+    addiu       s1, s1, -0x10
     sh          s1, 0x2(s0)  ; saves random value to y coordinate
     
     sh          v0, 0x4(s0)  ; value
@@ -95,10 +103,13 @@ add:
     lw          s0, 0x0(sp)
     lw          s1, 0x4(sp)
     lw          t0, 0x8(sp)
-
+    lw          a0, 0x0C(sp)
+    lw          a1, 0x10(sp)
+    lw          a2, 0x14(sp)
+@skip_add:
     li          ra, 0x9C75104
     j           0x09C953E0
-    addiu       sp, sp, 0xC
+    addiu       sp, sp, 0x18
 
 check_n_enable:
     li          s0, 0x09C57CA0
@@ -186,6 +197,74 @@ end:
 
 seed:
     .word       149
+
+get_coords: ; a0 monster data
+    li      a1, ViewMatrix
+
+    lv.q    r100, 0x00(a1)
+    lv.q    r101, 0x10(a1)
+    lv.q    r102, 0x20(a1)
+    lv.q    r103, 0x30(a1)
+
+    ; load monster coords
+    lv.q  c500, 0x80(a0)
+    vone.s  s503
+
+    ; view matrix * monster coords
+    vtfm4.q r600, m100, c500
+
+    ; set projection matrix
+    vzero.q  c500
+    vzero.q  c510
+    vzero.q  c520
+    vzero.q  c530
+
+    li	a0,	0x3f9b8c00
+    mtv	a0, s500
+
+    li	a0, 0x40093eff
+    mtv	a0, s511
+
+    li	a0, 0xbf800000
+    mtv	a0, s522
+
+    li	a0, 0xbf800000
+    mtv	a0, s532
+
+    li	a0, 0xc2700000
+    mtv	a0, s523
+
+    ; projection matrix * view matrix * monster coords
+    vtfm4.q r601, M500, r600
+
+    vdiv.s s602, s601, s631
+    vdiv.s s612, s611, s631
+    vdiv.s s622, s621, s631
+
+    li	a0, 0x43f00000
+    mtv	a0, s600
+
+    li	a0, 0x43880000
+    mtv	a0, s610
+
+    li	a0, 0x3f000000
+    mtv	a0, s620
+
+    vadd.s s602, s602, s630
+    vmul.s s602, s602, s620
+    vmul.s s602, s602, s600 ;result x
+
+    vsub.s s612, s630, s612
+    vmul.s s612, s612, s620
+    vmul.s s612, s612, s610 ;result y
+
+    ; set crosshair vertices
+    vf2iz.p     r602, r602, 0
+    mfv         a1, s602
+    mfv         a2, s612
+    
+    jr          ra
+    nop
 
 rng:
     liw         at, seed

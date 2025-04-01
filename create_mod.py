@@ -4,7 +4,7 @@ with open("bin/dmg_num.bin", "wb") as file:
     with open("bin/prints.bin", "rb") as prints:
         data = prints.read()
     
-    file.write(struct.pack("2I", 0x9F00000, len(data)))
+    file.write(struct.pack("2I", 0x09F00400, len(data)))
     file.write(data)
 
     with open("bin/eboot.bin", "rb") as eboot:
