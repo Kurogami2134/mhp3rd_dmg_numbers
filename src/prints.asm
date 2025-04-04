@@ -12,6 +12,7 @@ CHARWIDTH	equ		0x12C
 CHARHEIGHT	equ		0x12D
 CHARCOLOR	equ		0x12E
 printf      equ     0x088EAA64
+player_area equ     0x08B24979
 ViewMatrix  equ     0x09B486B0
 
 
@@ -53,6 +54,12 @@ add:
     sw          a0, 0x0C(sp)
     sw          a1, 0x10(sp)
     sw          a2, 0x14(sp)
+
+    li          a1, player_area
+    lb          a1, 0x0(a1)
+    lb          a2, 0xD6(a0)
+    bne         a1, a2, @ret
+    nop
 
     liw         t0, last
     sll         t0, t0, 0x3
