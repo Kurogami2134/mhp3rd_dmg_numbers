@@ -113,10 +113,11 @@ create_print:
     lw          a0, 0x0C(sp)
     lw          a1, 0x10(sp)
     lw          a2, 0x14(sp)
+    addiu       sp, sp, 0x18
 @skip_add:
     li          ra, 0x9C75104
     j           0x09C953E0
-    addiu       sp, sp, 0x18
+    nop
 
 check_n_enable:
     li          s0, 0x09C57CA0
