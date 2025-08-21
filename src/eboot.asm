@@ -1,5 +1,5 @@
-.createfile "../bin/eboot.bin", 0x88E6D64
+.createfile "../bin/eboot.bin", MAIN_HOOK
 
-    j       main
+jal         main
 
 .close

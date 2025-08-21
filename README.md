@@ -21,11 +21,17 @@ Adds damage display to MHP3rd.
 
 ### Instructions
 
-Assemble `src/main.asm` using armips, and run the python script that suits your needs.
+Assemble either `src/no_hd.asm` for the PSP version of the game, or `src/hd_ver.asm` for the HD version of the game using armips, and run the python script that suits your needs.
 
 #### Assembling
 
-    armips src/main.asm
+##### PSP
+
+    armips src/no_hd.asm
+
+##### HD
+
+    armips src/hd_ver.asm
 
 #### Creating a mod
 
