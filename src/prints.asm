@@ -39,6 +39,9 @@ SCALING_PWR equ     5
 
 .createfile "../bin/prints.bin", LOAD_ADD
 
+; GUARD_VALUE
+.word 0x2134
+
 last:
     .word       0
 add:
