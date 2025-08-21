@@ -4,11 +4,29 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build",
+            "label": "build_psp",
             "type": "shell",
             "command": "armips",
             "args": [
-                "src/main.asm",
+                "src/no_hd.asm",
+                "-sym2",
+                "bin/p3rd-dmg-num.sym"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "build_hd",
+            "type": "shell",
+            "command": "armips",
+            "args": [
+                "src/hd_ver.asm",
                 "-sym2",
                 "bin/p3rd-dmg-num.sym"
             ],

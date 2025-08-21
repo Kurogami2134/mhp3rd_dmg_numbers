@@ -11,10 +11,7 @@ Ycurs		equ		0x122
 CHARWIDTH	equ		0x12C
 CHARHEIGHT	equ		0x12D
 CHARCOLOR	equ		0x12E
-printf      equ     0x088EAA64
-player_area equ     0x08B24979
-ViewMatrix  equ     0x09B486B0
-
+GAME        equ     0x656D6167
 
 RED         equ     0x13
 YELLOW      equ     0x12
@@ -40,7 +37,7 @@ SCALING_PWR equ     5
 	lb			dest, value & 0xFFFF(at)
 .endmacro
 
-.createfile "../bin/prints.bin", 0x09F00400
+.createfile "../bin/prints.bin", LOAD_ADD
 
 last:
     .word       0
@@ -115,22 +112,22 @@ create_print:
     lw          a2, 0x14(sp)
     addiu       sp, sp, 0x18
 @skip_add:
-    li          ra, 0x9C75104
-    j           0x09C953E0
+    li          ra, ADD_RA
+    j           ADD_RET
     nop
 
 check_n_enable:
-    li          s0, 0x09C57CA0
-    li          at, 0x656D6167
+    li          s0, TASK
+    li          at, GAME
     lw          s0, 0x0(s0)
     bne         s0, at, check_ret
     nop
-    li          s0, 0x09C1EC70
+    li          s0, CHECK
     lw          at, 0x0(s0)
     bnel        at, zero, @@n_skip
     sw          zero, 0x0(s0)
 @@n_skip:
-    li          s0, 0x09C750FC
+    li          s0, ADD_HOOK
     li          at, 0x0A000000 | (add/4)
     lw          a0, 0x0(s0)
     beq         a0, at, @@add_skip
@@ -142,10 +139,11 @@ check_n_enable:
     nop
 
 main:
-    addiu       sp, sp, -0x4
+    addiu       sp, sp, -0x8
     sw          s0, 0x0(sp)
+    sw          ra, 0x4(sp)
 
-    j           check_n_enable
+    b           check_n_enable
     nop
 
 check_ret:
@@ -163,7 +161,7 @@ check_ret:
     addiu       a0, a0, -0x1
     sb          a0, 0x7(at)
 
-    li          a0, 0x09ADB910
+    li          a0, PRINT_SETTINGS
 
     lh          a1, 0x0(at)
     sh          a1, Xcurs(a0)
@@ -194,14 +192,13 @@ check_ret:
     nop
 end:
     lw          s0, 0x0(sp)
-    addiu       sp, sp, 0x4
+    lw          ra, 0x4(sp)
 
-    li          a0, 0x09ADB910
+    li          a0, PRINT_SETTINGS
     li          a1, 0x0
     li          a2, 0x1
-    li          ra, 0x088E6D6C
-    j           0x088EBAB8
-    nop
+    j           MAIN_RET
+    addiu       sp, sp, 0x8
 
 seed:
     .word       149
