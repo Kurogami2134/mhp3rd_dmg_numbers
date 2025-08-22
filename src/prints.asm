@@ -166,28 +166,109 @@ check_ret:
     nop
     
     addiu       a0, a0, -0x1
-    sb          a0, 0x7(at)
+    sb          a0, 0x7(at)          ; a0 = remaining_frames (já decrementado)
 
-    li          a0, PRINT_SETTINGS
+    ; --- Preparar ponteiro para PRINT_SETTINGS em t8 ---
+    li          t8, PRINT_SETTINGS
 
+    ; --- X: cursor ---
     lh          a1, 0x0(at)
-    sh          a1, Xcurs(a0)
+    sh          a1, Xcurs(t8)
 
-    lh          a1, 0x2(at)
-    addiu       a1, a1, -0x2
-    sh          a1, 0x2(at)
-    sh          a1, Ycurs(a0)
+    ; --- Y: animação com bounce (11 frames) ---
+    lh          t2, 0x2(at)          ; t2 = y_base (não persistimos alterações)
+    li          t4, DURATION
+    subu        t0, t4, a0           ; t0 = age = DURATION - remaining_frames
+    move        t1, zero             ; t1 = deltaY default (0)
 
+    ; age map (1..11):
+    ; 1: 0
+    ; 2: -2
+    ; 3: -5
+    ; 4: -10
+    ; 5: -15
+    ; 6: -20
+    ; 7: -15
+    ; 8: -10
+    ; 9: -5
+    ; 10: -2
+    ; 11: 0
+
+    li          t5, 2
+    beq         t0, t5, @b_n2
+    nop
+    li          t5, 3
+    beq         t0, t5, @b_n5
+    nop
+    li          t5, 4
+    beq         t0, t5, @b_n10
+    nop
+    li          t5, 5
+    beq         t0, t5, @b_n15
+    nop
+    li          t5, 6
+    beq         t0, t5, @b_n20
+    nop
+    li          t5, 7
+    beq         t0, t5, @b_n15
+    nop
+    li          t5, 8
+    beq         t0, t5, @b_n10
+    nop
+    li          t5, 9
+    beq         t0, t5, @b_n5
+    nop
+    li          t5, 10
+    beq         t0, t5, @b_n2
+    nop
+    li          t5, 11
+    beq         t0, t5, @b_0
+    nop
+    b           @b_done
+    nop
+
+@b_n2:   addiu   t1, zero, -2    ; -2
+         b       @b_done
+         nop
+@b_n5:   addiu   t1, zero, -5    ; -5
+         b       @b_done
+         nop
+@b_n10:  addiu   t1, zero, -10   ; -10
+         b       @b_done
+         nop
+@b_n15:  addiu   t1, zero, -15   ; -15
+         b       @b_done
+         nop
+@b_n20:  addiu   t1, zero, -20   ; -20
+         b       @b_done
+         nop
+@b_0:    move    t1, zero        ; 0
+@b_done:
+    addu        t3, t2, t1
+    sh          t3, Ycurs(t8)
+
+    ; --- Cor ---
     lb          a1, 0x6(at)
-    sb          a1, CHARCOLOR(a0)
+    sb          a1, CHARCOLOR(t8)
 
+    ; --- Tamanho (width/height) ---
     lh          a2, 0x4(at)
     srl         a2, a2, SCALING_PWR
     addiu       a2, a2, BASE_SIZE
     sll         a1, a2, 8
     or          a1, a1, a2
-    sh          a1, CHARWIDTH(a0)
+    sh          a1, CHARWIDTH(t8)
     
+    ; --- Pisca nos últimos 5 frames (a0 <= 4 após o dec) ---
+    slti        t6, a0, 6            ; t6=1 se últimos 5 frames
+    beq         t6, zero, @draw
+    nop
+    andi        t6, a0, 1            ; alterna desenhar (1) e não desenhar (0)
+    beq         t6, zero, @loop_end  ; se par, pula o draw
+    nop
+
+@draw:
+    move        a0, t8               ; a0 = PRINT_SETTINGS
     li          a1, fmt
     lh          a2, 0x4(at)
     jal         printf
