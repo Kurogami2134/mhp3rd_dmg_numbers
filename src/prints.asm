@@ -29,15 +29,15 @@ SCALING_PWR equ     5
 ; NOISE_FIX_X / NOISE_FIX_Y = deslocamentos fixos aplicados após o ruído
 ;   - NOISE_FIX_X: **positivo move para a ESQUERDA**, negativo para a direita
 ;   - NOISE_FIX_Y: positivo desce, negativo sobe
-NOISE_STEP    equ   3          ; ex.: 6 px (0,6,12,18,24,30)
-NOISE_STEPS   equ   6          ; max step = 5  => opções 0..5
-NOISE_FIX_X   equ   12          ; + => esquerda, − => direita
-NOISE_FIX_Y   equ   -45          ; + => baixo,     − => cima
+NOISE_STEP    equ   3
+NOISE_STEPS   equ   6
+NOISE_FIX_X   equ   12         ; + => esquerda, − => direita
+NOISE_FIX_Y   equ   -45        ; + => baixo,     − => cima
 
 ; ---------------- Parametrização da tela e do clamp ----------------
 SCREEN_W      equ   480
 SCREEN_H      equ   272
-CLAMP_MARGIN  equ   25          ; margem interna (px) nas bordas
+CLAMP_MARGIN  equ   25         ; margem interna (px) nas bordas
 X_MIN         equ   CLAMP_MARGIN
 Y_MIN         equ   CLAMP_MARGIN
 X_MAX         equ   (SCREEN_W - CLAMP_MARGIN)
@@ -59,11 +59,21 @@ Y_MAX         equ   (SCREEN_H - CLAMP_MARGIN)
 
 .createfile "../bin/prints.bin", LOAD_ADD
 
-; GUARD_VALUE
 .word 0x2134
+
+; ---------------- Bounce por TABELA (independente de DURATION) -------------
+; BOUNCE_LEN = número de frames em que aplicamos deslocamento (age ∈ 1..BOUNCE_LEN)
+; BOUNCE_TABLE[i] = deltaY aplicado (em pixels) no frame age=(i+1)
+; Obs.: valores negativos sobem na tela (y menor)
+BOUNCE_LEN    equ   11
+;            age:   1,   2,   3,    4,    5,    6,    7,    8,   9,   10,  11
+BOUNCE_TABLE:
+    .hword      0,  -2,  -5,  -10,  -15,  -20,  -15,  -10,  -5,  -2,   0
+.align 4                    ; <<< garante alinhamento de 4 bytes para instruções
 
 last:
     .word       0
+
 add:
     beq         v0, zero,  @skip_add
     nop
@@ -92,47 +102,44 @@ create_print:
     nop
 
     ; ---------- Ruído inicial parametrizado + mix por slot ----------
-    ; idx = (offset/8)
     srl         t9, t0, 3                  ; t9 = idx do slot (0..MAX_NUMBERS-1)
 
-    ; ---- X: base + (bin*NOISE_STEP) - NOISE_FIX_X  (bin 0..NOISE_STEPS) ----
+    ; ---- X: base + (bin*NOISE_STEP) - NOISE_FIX_X ----
     jal         rng
     nop
-    ; mixX = (idx*7 + 3) & 0xFF
     li          t7, 7
     multu       t9, t7
     mflo        t7
     addiu       t7, t7, 3
     andi        t7, t7, 0x00FF
-    xor         t1, s1, t7                 ; t1 = rng ^ mixX
-    andi        t1, t1, 0x0F               ; t1 ∈ 0..15
+    xor         t1, s1, t7
+    andi        t1, t1, 0x0F
 
-    li          t6, NOISE_STEPS            ; maxStep
-    multu       t1, t6                     ; t1 * maxStep
+    li          t6, NOISE_STEPS
+    multu       t1, t6
     mflo        t2
-    addiu       t2, t2, 15                 ; +15 p/ arredondar ao dividir por 16
-    srl         t2, t2, 4                  ; t2 = bin 0..NOISE_STEPS
+    addiu       t2, t2, 15
+    srl         t2, t2, 4                  ; bin 0..NOISE_STEPS
 
     li          t5, NOISE_STEP
     multu       t2, t5
-    mflo        t1                         ; t1 = offset = bin*NOISE_STEP
+    mflo        t1                         ; offset = bin*NOISE_STEP
 
     li          t4, NOISE_FIX_X
-    addu        s1, a1, t1                 ; base + noise (para a direita)
+    addu        s1, a1, t1                 ; base + noise (direita)
     subu        s1, s1, t4                 ; − NOISE_FIX_X (positivo => esquerda)
     sh          s1, 0x0(s0)                ; x inicial
 
-    ; ---- Y: base - (bin*NOISE_STEP) + NOISE_FIX_Y  (sobe com noise) ----
+    ; ---- Y: base - (bin*NOISE_STEP) + NOISE_FIX_Y ----
     jal         rng
     nop
-    ; mixY = (idx*11 + 5) & 0xFF
     li          t7, 11
     multu       t9, t7
     mflo        t7
     addiu       t7, t7, 5
     andi        t7, t7, 0x00FF
-    xor         t1, s1, t7                 ; t1 = rng ^ mixY
-    andi        t1, t1, 0x0F               ; 0..15
+    xor         t1, s1, t7
+    andi        t1, t1, 0x0F
 
     li          t6, NOISE_STEPS
     multu       t1, t6
@@ -145,30 +152,28 @@ create_print:
     mflo        t1                         ; offset
 
     li          t4, NOISE_FIX_Y
-    subu        s1, a2, t1                 ; base - noise  (para cima)
-    addu        s1, s1, t4                 ; + NOISE_FIX_Y (ajuste fino)
+    subu        s1, a2, t1                 ; base - noise (para cima)
+    addu        s1, s1, t4                 ; + NOISE_FIX_Y
     sh          s1, 0x2(s0)                ; y inicial
 
-    ; clamp de margem/tela visível após calcular x,y iniciais
+    ; clamp depois do cálculo inicial
     jal         clamp_initial_pos
     nop
     
-    sh          v0, 0x4(s0)  ; value
-    li          s1, DURATION << 8   ; set frames to duration
-    
-    ; set the color depending on damage
+    sh          v0, 0x4(s0)                ; value
+    li          s1, DURATION << 8          ; frames (hi) + cor (lo será ajustado)
+
+    ; cor por thresholds (mantido como antes)
     slti        at, v0, 100
     beql        at, zero, @@other_colors
     addiu       s1, RED
-    
     slti        at, v0, 10
     beql        at, zero, @@other_colors
     addiu       s1, YELLOW
 @@white:
     addiu       s1, WHITE
 @@other_colors:
-
-    sh          s1, 0x6(s0)  ; frames and color
+    sh          s1, 0x6(s0)                ; frames e color
 
     srl         t0, t0, 0x3
     addiu       s1, t0, 0x1
@@ -222,9 +227,7 @@ main:
     nop
 
 check_ret:
-    
     li          s0, MAX_NUMBERS
-
     li          at, printdata
     
 @loop:
@@ -236,90 +239,39 @@ check_ret:
     addiu       a0, a0, -0x1
     sb          a0, 0x7(at)          ; a0 = remaining_frames (já decrementado)
 
-    ; --- Preparar ponteiro para PRINT_SETTINGS em t8 ---
-    li          t8, PRINT_SETTINGS
+    li          t8, PRINT_SETTINGS    ; ponteiro settings
 
-    ; --- X: cursor ---
+    ; X cursor
     lh          a1, 0x0(at)
     sh          a1, Xcurs(t8)
 
-    ; --- Y: animação com bounce (11 frames) ---
-    lh          t2, 0x2(at)          ; t2 = y_base (não persistimos alterações)
+    ; Y com bounce por tabela
+    lh          t2, 0x2(at)          ; y_base
     li          t4, DURATION
-    subu        t0, t4, a0           ; t0 = age = DURATION - remaining_frames
-    move        t1, zero             ; t1 = deltaY default (0)
-
-    ; age map (1..11):
-    ; 1: 0
-    ; 2: -2
-    ; 3: -5
-    ; 4: -10
-    ; 5: -15
-    ; 6: -20
-    ; 7: -15
-    ; 8: -10
-    ; 9: -5
-    ; 10: -2
-    ; 11: 0
-
-    li          t5, 2
-    beq         t0, t5, @b_n2
+    subu        t0, t4, a0           ; age = DURATION - remaining
+    
+    li          t7, BOUNCE_LEN
+    slt         t6, t7, t0           ; age > BOUNCE_LEN ?
+    bne         t6, zero, @bounce_zero
     nop
-    li          t5, 3
-    beq         t0, t5, @b_n5
+    addiu       t6, t0, -1           ; index = age-1
+    sll         t6, t6, 1            ; *2 (hword)
+    li          t7, BOUNCE_TABLE
+    addu        t7, t7, t6
+    lh          t1, 0x0(t7)
+    b           @bounce_done
     nop
-    li          t5, 4
-    beq         t0, t5, @b_n10
-    nop
-    li          t5, 5
-    beq         t0, t5, @b_n15
-    nop
-    li          t5, 6
-    beq         t0, t5, @b_n20
-    nop
-    li          t5, 7
-    beq         t0, t5, @b_n15
-    nop
-    li          t5, 8
-    beq         t0, t5, @b_n10
-    nop
-    li          t5, 9
-    beq         t0, t5, @b_n5
-    nop
-    li          t5, 10
-    beq         t0, t5, @b_n2
-    nop
-    li          t5, 11
-    beq         t0, t5, @b_0
-    nop
-    b           @b_done
-    nop
-
-@b_n2:   addiu   t1, zero, -2    ; -2
-         b       @b_done
-         nop
-@b_n5:   addiu   t1, zero, -5    ; -5
-         b       @b_done
-         nop
-@b_n10:  addiu   t1, zero, -10   ; -10
-         b       @b_done
-         nop
-@b_n15:  addiu   t1, zero, -15   ; -15
-         b       @b_done
-         nop
-@b_n20:  addiu   t1, zero, -20   ; -20
-         b       @b_done
-         nop
-@b_0:    move    t1, zero        ; 0
-@b_done:
+@bounce_zero:
+    move        t1, zero
+@bounce_done:
     addu        t3, t2, t1
     sh          t3, Ycurs(t8)
 
-    ; --- Cor ---
+    ; Cor
     lb          a1, 0x6(at)
     sb          a1, CHARCOLOR(t8)
 
-    ; --- Tamanho (width/height) ---
+    ; Tamanho
     lh          a2, 0x4(at)
     srl         a2, a2, SCALING_PWR
     addiu       a2, a2, BASE_SIZE
@@ -327,16 +279,16 @@ check_ret:
     or          a1, a1, a2
     sh          a1, CHARWIDTH(t8)
     
-    ; --- Pisca nos últimos 5 frames (a0 <= 4 após o dec) ---
-    slti        t6, a0, 6            ; t6=1 se últimos 5 frames
+    ; Blink (mantido)
+    slti        t6, a0, 6
     beq         t6, zero, @draw
     nop
-    andi        t6, a0, 1            ; alterna desenhar (1) e não desenhar (0)
-    beq         t6, zero, @loop_end  ; se par, pula o draw
+    andi        t6, a0, 1
+    beq         t6, zero, @loop_end
     nop
 
 @draw:
-    move        a0, t8               ; a0 = PRINT_SETTINGS
+    move        a0, t8
     li          a1, fmt
     lh          a2, 0x4(at)
     jal         printf
@@ -346,6 +298,7 @@ check_ret:
     addiu       s0, s0, -0x1
     bne         s0, zero, @loop
     nop
+
 end:
     lw          s0, 0x0(sp)
     lw          ra, 0x4(sp)
@@ -443,9 +396,6 @@ rng:
 
 ; ---------------------------------------------------------------------------
 ; clamp_initial_pos
-;  - Usa s0 como ponteiro para o slot corrente (já configurado em create_print)
-;  - Garante x,y dentro da tela com margem interna parametrizável:
-;      x ∈ [X_MIN, X_MAX], y ∈ [Y_MIN, Y_MAX]  (p/ 480x272 e margem 10: [10..470], [10..262])
 ; ---------------------------------------------------------------------------
 clamp_initial_pos:
     addiu       sp, sp, -0x10
@@ -455,37 +405,37 @@ clamp_initial_pos:
     sw          t3, 0x0C(sp)
 
     ; ---- Clamp X ----
-    lh          t1, 0x0(s0)          ; t1 = x
-    li          t2, X_MIN            ; minX
-    slt         t3, t1, t2           ; t3 = (x < minX)
+    lh          t1, 0x0(s0)
+    li          t2, X_MIN
+    slt         t3, t1, t2
     beq         t3, zero, @@x_ge_min
     nop
-    sh          t2, 0x0(s0)          ; x = minX
+    sh          t2, 0x0(s0)
     b           @@y_part
     nop
 @@x_ge_min:
-    li          t2, X_MAX            ; maxX
-    slt         t3, t2, t1           ; t3 = (maxX < x) => x > maxX
+    li          t2, X_MAX
+    slt         t3, t2, t1
     beq         t3, zero, @@y_part
     nop
-    sh          t2, 0x0(s0)          ; x = maxX
+    sh          t2, 0x0(s0)
 
     ; ---- Clamp Y ----
 @@y_part:
-    lh          t1, 0x2(s0)          ; t1 = y
-    li          t2, Y_MIN            ; minY
-    slt         t3, t1, t2           ; t3 = (y < minY)
+    lh          t1, 0x2(s0)
+    li          t2, Y_MIN
+    slt         t3, t1, t2
     beq         t3, zero, @@y_ge_min
     nop
-    sh          t2, 0x2(s0)          ; y = minY
+    sh          t2, 0x2(s0)
     b           @@ret
     nop
 @@y_ge_min:
-    li          t2, Y_MAX            ; maxY
-    slt         t3, t2, t1           ; t3 = (maxY < y) => y > maxY
+    li          t2, Y_MAX
+    slt         t3, t2, t1
     beq         t3, zero, @@ret
     nop
-    sh          t2, 0x2(s0)          ; y = maxY
+    sh          t2, 0x2(s0)
 
 @@ret:
     lw          t3, 0x0C(sp)
@@ -502,4 +452,3 @@ fmt:
 printdata:
 
 .close
-
