@@ -23,6 +23,17 @@ BASE_SIZE   equ     0x12
 ; bigger means less scaling, exponentially
 SCALING_PWR equ     5
 
+; ---------------- Parametrização do ruído e offsets fixos ----------------
+; NOISE_STEPS = número máximo de steps (bin ∈ [0..NOISE_STEPS], total = NOISE_STEPS+1 opções)
+; NOISE_STEP  = tamanho de cada step (px)
+; NOISE_FIX_X / NOISE_FIX_Y = deslocamentos fixos aplicados após o ruído
+;   - NOISE_FIX_X: **positivo move para a ESQUERDA**, negativo para a direita
+;   - NOISE_FIX_Y: positivo desce, negativo sobe
+NOISE_STEP    equ   3          ; ex.: 6 px (0,6,12,18,24,30)
+NOISE_STEPS   equ   6          ; max step = 5  => opções 0..5
+NOISE_FIX_X   equ   12          ; + => esquerda, − => direita
+NOISE_FIX_Y   equ   -45          ; + => baixo,     − => cima
+
 ; ---------------- Parametrização da tela e do clamp ----------------
 SCREEN_W      equ   480
 SCREEN_H      equ   272
@@ -79,16 +90,64 @@ add:
 create_print:
     jal         get_coords
     nop
-    jal         rng
-    nop
-    addu        s1, s1, a1
-    sh          s1, 0x0(s0)  ; saves random value to x coordinate
 
+    ; ---------- Ruído inicial parametrizado + mix por slot ----------
+    ; idx = (offset/8)
+    srl         t9, t0, 3                  ; t9 = idx do slot (0..MAX_NUMBERS-1)
+
+    ; ---- X: base + (bin*NOISE_STEP) - NOISE_FIX_X  (bin 0..NOISE_STEPS) ----
     jal         rng
     nop
-    addu        s1, s1, a2
-    addiu       s1, s1, -0x15        ; spawn Y um pouco mais alto (-21)
-    sh          s1, 0x2(s0)  ; saves random value to y coordinate
+    ; mixX = (idx*7 + 3) & 0xFF
+    li          t7, 7
+    multu       t9, t7
+    mflo        t7
+    addiu       t7, t7, 3
+    andi        t7, t7, 0x00FF
+    xor         t1, s1, t7                 ; t1 = rng ^ mixX
+    andi        t1, t1, 0x0F               ; t1 ∈ 0..15
+
+    li          t6, NOISE_STEPS            ; maxStep
+    multu       t1, t6                     ; t1 * maxStep
+    mflo        t2
+    addiu       t2, t2, 15                 ; +15 p/ arredondar ao dividir por 16
+    srl         t2, t2, 4                  ; t2 = bin 0..NOISE_STEPS
+
+    li          t5, NOISE_STEP
+    multu       t2, t5
+    mflo        t1                         ; t1 = offset = bin*NOISE_STEP
+
+    li          t4, NOISE_FIX_X
+    addu        s1, a1, t1                 ; base + noise (para a direita)
+    subu        s1, s1, t4                 ; − NOISE_FIX_X (positivo => esquerda)
+    sh          s1, 0x0(s0)                ; x inicial
+
+    ; ---- Y: base - (bin*NOISE_STEP) + NOISE_FIX_Y  (sobe com noise) ----
+    jal         rng
+    nop
+    ; mixY = (idx*11 + 5) & 0xFF
+    li          t7, 11
+    multu       t9, t7
+    mflo        t7
+    addiu       t7, t7, 5
+    andi        t7, t7, 0x00FF
+    xor         t1, s1, t7                 ; t1 = rng ^ mixY
+    andi        t1, t1, 0x0F               ; 0..15
+
+    li          t6, NOISE_STEPS
+    multu       t1, t6
+    mflo        t2
+    addiu       t2, t2, 15
+    srl         t2, t2, 4                  ; bin 0..NOISE_STEPS
+
+    li          t5, NOISE_STEP
+    multu       t2, t5
+    mflo        t1                         ; offset
+
+    li          t4, NOISE_FIX_Y
+    subu        s1, a2, t1                 ; base - noise  (para cima)
+    addu        s1, s1, t4                 ; + NOISE_FIX_Y (ajuste fino)
+    sh          s1, 0x2(s0)                ; y inicial
 
     ; clamp de margem/tela visível após calcular x,y iniciais
     jal         clamp_initial_pos
@@ -443,3 +502,4 @@ fmt:
 printdata:
 
 .close
+
