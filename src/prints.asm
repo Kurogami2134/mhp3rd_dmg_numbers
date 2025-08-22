@@ -2,7 +2,7 @@
 ;  Monster Hunter Portable 3rd – Damage Numbers (PSP/TempAR)
 ;  This blob is placed at LOAD_ADD and provides:
 ;   - A hook ("add") that captures damage events and creates a per-hit print slot
-;   - A tiny per-frame “engine” that animates numbers with a bounce, blink and size
+;   - A tiny per-frame “engine” that animates numbers with a bounce, size and tail color sequence
 ;   - 2D screen projection of the monster position to place the initial number
 ;   - Clamp to keep the text inside the visible area (with margin)
 ;
@@ -11,7 +11,9 @@
 ;   • Initial position is the projected monster position + “coarse noise” (gridy).
 ;   • Noise uses a cheap 8-bit LCG + per-slot mixing to decorrelate simultaneous hits.
 ;   • Animation Y-offset uses a small bounce TABLE (data-driven, easy to tune).
-;   • Blink occurs only in the last 5 frames (kept simple on purpose).
+;   • End-of-life visuals (last frames) use a small **color sequence** per base color
+;     instead of blinking on/off: we step through a palette that includes 0xFF
+;     for “invisible”. This preserves a single draw path and allows precise fades.
 ;   • We deliberately over-save a few regs to be robust inside a foreign callsite.
 ;   • All numbers/constants that we expect to tweak frequently are `equ`.
 ;
@@ -37,16 +39,16 @@ CHARCOLOR	equ		0x12E   ; PRINT_SETTINGS->char color
 
 GAME        equ     0x656D6167  ; ASCII "game" sentinel used to detect task init
 
-; Colors used by the in-game print routine (UI palette indices)
-RED         equ     0x13
-YELLOW      equ     0x12
-WHITE       equ     0x00
-
 ; Ring-buffer of active numbers
 MAX_NUMBERS equ     10          ; simultaneous numbers tracked
-DURATION    equ     27          ; total life (frames) for each number instance
+DURATION    equ     28          ; total life (frames) for each number instance
 BASE_SIZE   equ     0x12        ; base glyph size (see downscale/log-ish logic)
 SCALING_PWR equ     5           ; larger = more downscaling for small values
+
+; Tail color sequencing (replaces old blink)
+;  • For the last TAIL_FRAMES, we index a small palette per base color.
+;  • Outside that window, we render using the base color itself.
+TAIL_FRAMES equ     4
 
 ; ---------------- Coarse noise and fixed offsets (spawn jitter) --------------
 ; NOISE_STEPS = maximum discrete steps (bin ∈ [0..NOISE_STEPS])
@@ -225,19 +227,34 @@ create_print:
     sh          v0, 0x4(s0)                   ; value
     li          s1, DURATION << 8             ; frames in high 8 bits
 
-    ; Color thresholds:  <10 → YELLOW, [10..99] → WHITE, ≥100 → RED
-    ; (Kept hard-coded for now; easy to param if needed later.)
+    ; Color thresholds (family) and **base color** = first item in list
+    ;   v0 >= 100 → RED palette[0]
+    ;   v0 < 10   → YELLOW palette[0]
+    ;   else → WHITE palette[0]
     slti        at, v0, 100
-    beql        at, zero, @@other_colors
-    addiu       s1, RED
+    beql        at, zero, @@use_red
+    nop
     slti        at, v0, 10
-    beql        at, zero, @@other_colors
-    addiu       s1, YELLOW
-@@white:
-    addiu       s1, WHITE
-@@other_colors:
-    sh          s1, 0x6(s0)                   ; pack frames+color
-
+    beql        at, zero, @@use_yellow
+    nop
+@@use_white:
+    li          t3, white_palette
+    lbu         t1, 0(t3)                      ; t1 = white_palette[0]
+    or          s1, s1, t1
+    b           @@color_done
+    nop
+@@use_yellow:
+    li          t3, yellow_palette
+    lbu         t1, 0(t3)                      ; t1 = yellow_palette[0]
+    or          s1, s1, t1
+    b           @@color_done
+    nop
+@@use_red:
+    li          t3, red_palette
+    lbu         t1, 0(t3)                      ; t1 = red_palette[0]
+    or          s1, s1, t1
+@@color_done:
+    sh          s1, 0x6(s0)                    ; pack frames+color
     ; Advance ring index: last = (last + 1) % MAX_NUMBERS
     srl         t0, t0, 0x3                    ; restore idx from byte offset
     addiu       s1, t0, 0x1
@@ -303,8 +320,10 @@ main:
 
 ; =============================================================================
 ; check_ret – iterate through slots and render
-;  • Decrements remaining_frames, applies bounce (via table), blinks late,
-;    computes size, calls printf("%d") at the right place.
+;  • Decrements remaining_frames, applies bounce (via table), computes size,
+;    and applies the **tail color sequence** in the last TAIL_FRAMES frames.
+;    We no longer skip draws to blink: we swap the palette entry per-frame and
+;    let 0xFF act as “invisible”.
 ; =============================================================================
 check_ret:
     li          s0, MAX_NUMBERS
@@ -350,10 +369,6 @@ check_ret:
     addu        t3, t2, t1
     sh          t3, Ycurs(t8)
 
-    ; Color from slot
-    lb          a1, 0x6(at)
-    sb          a1, CHARCOLOR(t8)
-
     ; Size: width/height packed. The pipeline is:
     ;   sz = BASE_SIZE + (value >> SCALING_PWR)
     ; This behaves like a “soft-log” growth (cheaper than float pow).
@@ -364,14 +379,73 @@ check_ret:
     or          a1, a1, a2
     sh          a1, CHARWIDTH(t8)            ; writes width&height at once
 
-    ; Blink in the last 5 frames: trivial even/odd toggle
-    ; (Kept simple deliberately until we decide to parameterize.)
-    slti        t6, a0, 6                    ; remaining <= 5 ?
-    beq         t6, zero, @draw
+    ; ------------------------------------------------------------------
+    ; Tail Color Sequence (last TAIL_FRAMES frames)
+    ;  • base_color = *(at + 0x6)
+    ;  • if (remaining_frames > TAIL_FRAMES) → use base_color
+    ;  • else idx = (TAIL_FRAMES - remaining_frames) ∈ [0..TAIL_FRAMES-1],
+    ;    pick from palette for WHITE/YELLOW/RED; fallback = base_color
+    ;  Palettes:
+    ;    WHITE  : 00, FF, 09, FF, 2A
+    ;    YELLOW : 12, FF, 0B, FF, 2C
+    ;    RED    : 13, FF, 37, FF, 08
+    ; ------------------------------------------------------------------
+    lb          t9, 0x6(at)             ; t9 = base_color
+    li          t6, TAIL_FRAMES
+    slt         t5, t6, a0              ; t5=1 if remaining_frames > TAIL_FRAMES
+    bne         t5, zero, @color_normal
     nop
-    andi        t6, a0, 1                    ; skip when even to “hide”
-    beq         t6, zero, @loop_end
+
+    ; inside tail window → idx = TAIL_FRAMES - remaining_frames
+    li          t0, TAIL_FRAMES
+    subu        t0, t0, a0              ; t0 = 0..TAIL_FRAMES  (se a0==0 → 5)
+    bne         a0, zero, @idx_ok
     nop
+    li          t0, TAIL_FRAMES-1       ; clamp para o último item (4)
+@idx_ok:
+    ; dispatch for **first item** of each pallet (constant agnostic)
+    li          t3, white_palette
+    lbu         t1, 0(t3)              ; white head
+    beq         t9, t1, @pal_white
+    nop
+    li          t3, yellow_palette
+    lbu         t1, 0(t3)              ; yellow head
+    beq         t9, t1, @pal_yellow
+    nop
+    li          t3, red_palette
+    lbu         t1, 0(t3)              ; red head
+    beq         t9, t1, @pal_red
+    nop
+    ; fallback: keep base color
+    move        t1, t9
+    b           @color_apply
+    nop
+@pal_white:
+    li          t3, white_palette
+    addu        t3, t3, t0
+    lbu         t1, 0x0(t3)
+    b           @color_apply
+    nop
+
+@pal_yellow:
+    li          t3, yellow_palette
+    addu        t3, t3, t0
+    lbu         t1, 0x0(t3)
+    b           @color_apply
+    nop
+
+@pal_red:
+    li          t3, red_palette
+    addu        t3, t3, t0
+    lbu         t1, 0x0(t3)
+    b           @color_apply
+    nop
+
+@color_normal:
+    move        t1, t9
+
+@color_apply:
+    sb          t1, CHARCOLOR(t8)
 
 @draw:
     ; printf("%d", value) at the prepared position / style in PRINT_SETTINGS
@@ -548,6 +622,18 @@ clamp_initial_pos:
     addiu       sp, sp, 0x10
     jr          ra
     nop
+
+; -----------------------------------------------------------------------------
+; Tail palettes (3 items per base color; TAIL_FRAMES must match list length)
+; -----------------------------------------------------------------------------
+white_palette:
+    .byte   0x00, 0x2A, 0x09, 0x0A
+
+yellow_palette:
+    .byte   0x12, 0x3A, 0x2C, 0x0C
+
+red_palette:
+    .byte   0x13, 0x20, 0x0D, 0xC2
 
 ; -----------------------------------------------------------------------------
 ; printf format (kept separate to make it trivial to try "%03d", "%4d", etc.)
