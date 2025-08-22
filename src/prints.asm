@@ -18,8 +18,8 @@ YELLOW      equ     0x12
 WHITE       equ     0x00
 
 MAX_NUMBERS equ     10
-DURATION    equ     15
-BASE_SIZE   equ     0x10
+DURATION    equ     27
+BASE_SIZE   equ     0x12
 ; bigger means less scaling, exponentially
 SCALING_PWR equ     5
 
