@@ -23,6 +23,15 @@ BASE_SIZE   equ     0x12
 ; bigger means less scaling, exponentially
 SCALING_PWR equ     5
 
+; ---------------- Parametrização da tela e do clamp ----------------
+SCREEN_W      equ   480
+SCREEN_H      equ   272
+CLAMP_MARGIN  equ   25          ; margem interna (px) nas bordas
+X_MIN         equ   CLAMP_MARGIN
+Y_MIN         equ   CLAMP_MARGIN
+X_MAX         equ   (SCREEN_W - CLAMP_MARGIN)
+Y_MAX         equ   (SCREEN_H - CLAMP_MARGIN)
+
 .macro liw,dest,value
     .if (value & 0xFFFF) > 0xFFFF/2
         lui			at, value / 0x10000 + 0x1
@@ -376,8 +385,8 @@ rng:
 ; ---------------------------------------------------------------------------
 ; clamp_initial_pos
 ;  - Usa s0 como ponteiro para o slot corrente (já configurado em create_print)
-;  - Garante x,y dentro da tela com margem interna de 10 px:
-;      x ∈ [10, 470], y ∈ [10, 262]  (tela 480x272)
+;  - Garante x,y dentro da tela com margem interna parametrizável:
+;      x ∈ [X_MIN, X_MAX], y ∈ [Y_MIN, Y_MAX]  (p/ 480x272 e margem 10: [10..470], [10..262])
 ; ---------------------------------------------------------------------------
 clamp_initial_pos:
     addiu       sp, sp, -0x10
@@ -388,36 +397,36 @@ clamp_initial_pos:
 
     ; ---- Clamp X ----
     lh          t1, 0x0(s0)          ; t1 = x
-    li          t2, 10               ; minX = 10
-    slt         t3, t1, t2           ; t3 = (x < 10)
+    li          t2, X_MIN            ; minX
+    slt         t3, t1, t2           ; t3 = (x < minX)
     beq         t3, zero, @@x_ge_min
     nop
-    sh          t2, 0x0(s0)          ; x = 10
+    sh          t2, 0x0(s0)          ; x = minX
     b           @@y_part
     nop
 @@x_ge_min:
-    li          t2, 470              ; maxX = 480 - 10
-    slt         t3, t2, t1           ; t3 = (470 < x) => x > 470
+    li          t2, X_MAX            ; maxX
+    slt         t3, t2, t1           ; t3 = (maxX < x) => x > maxX
     beq         t3, zero, @@y_part
     nop
-    sh          t2, 0x0(s0)          ; x = 470
+    sh          t2, 0x0(s0)          ; x = maxX
 
     ; ---- Clamp Y ----
 @@y_part:
     lh          t1, 0x2(s0)          ; t1 = y
-    li          t2, 10               ; minY = 10
-    slt         t3, t1, t2           ; t3 = (y < 10)
+    li          t2, Y_MIN            ; minY
+    slt         t3, t1, t2           ; t3 = (y < minY)
     beq         t3, zero, @@y_ge_min
     nop
-    sh          t2, 0x2(s0)          ; y = 10
+    sh          t2, 0x2(s0)          ; y = minY
     b           @@ret
     nop
 @@y_ge_min:
-    li          t2, 262              ; maxY = 272 - 10
-    slt         t3, t2, t1           ; t3 = (262 < y) => y > 262
+    li          t2, Y_MAX            ; maxY
+    slt         t3, t2, t1           ; t3 = (maxY < y) => y > maxY
     beq         t3, zero, @@ret
     nop
-    sh          t2, 0x2(s0)          ; y = 262
+    sh          t2, 0x2(s0)          ; y = maxY
 
 @@ret:
     lw          t3, 0x0C(sp)
