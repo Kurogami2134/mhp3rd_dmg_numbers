@@ -78,8 +78,12 @@ create_print:
     jal         rng
     nop
     addu        s1, s1, a2
-    addiu       s1, s1, -0x10
+    addiu       s1, s1, -0x15        ; spawn Y um pouco mais alto (-21)
     sh          s1, 0x2(s0)  ; saves random value to y coordinate
+
+    ; clamp de margem/tela visível após calcular x,y iniciais
+    jal         clamp_initial_pos
+    nop
     
     sh          v0, 0x4(s0)  ; value
     li          s1, DURATION << 8   ; set frames to duration
@@ -285,6 +289,61 @@ rng:
 
     srl         s1, s1, 0x4
 
+    jr          ra
+    nop
+
+; ---------------------------------------------------------------------------
+; clamp_initial_pos
+;  - Usa s0 como ponteiro para o slot corrente (já configurado em create_print)
+;  - Garante x,y dentro da tela com margem interna de 10 px:
+;      x ∈ [10, 470], y ∈ [10, 262]  (tela 480x272)
+; ---------------------------------------------------------------------------
+clamp_initial_pos:
+    addiu       sp, sp, -0x10
+    sw          ra, 0x00(sp)
+    sw          t1, 0x04(sp)
+    sw          t2, 0x08(sp)
+    sw          t3, 0x0C(sp)
+
+    ; ---- Clamp X ----
+    lh          t1, 0x0(s0)          ; t1 = x
+    li          t2, 10               ; minX = 10
+    slt         t3, t1, t2           ; t3 = (x < 10)
+    beq         t3, zero, @@x_ge_min
+    nop
+    sh          t2, 0x0(s0)          ; x = 10
+    b           @@y_part
+    nop
+@@x_ge_min:
+    li          t2, 470              ; maxX = 480 - 10
+    slt         t3, t2, t1           ; t3 = (470 < x) => x > 470
+    beq         t3, zero, @@y_part
+    nop
+    sh          t2, 0x0(s0)          ; x = 470
+
+    ; ---- Clamp Y ----
+@@y_part:
+    lh          t1, 0x2(s0)          ; t1 = y
+    li          t2, 10               ; minY = 10
+    slt         t3, t1, t2           ; t3 = (y < 10)
+    beq         t3, zero, @@y_ge_min
+    nop
+    sh          t2, 0x2(s0)          ; y = 10
+    b           @@ret
+    nop
+@@y_ge_min:
+    li          t2, 262              ; maxY = 272 - 10
+    slt         t3, t2, t1           ; t3 = (262 < y) => y > 262
+    beq         t3, zero, @@ret
+    nop
+    sh          t2, 0x2(s0)          ; y = 262
+
+@@ret:
+    lw          t3, 0x0C(sp)
+    lw          t2, 0x08(sp)
+    lw          t1, 0x04(sp)
+    lw          ra, 0x00(sp)
+    addiu       sp, sp, 0x10
     jr          ra
     nop
 
