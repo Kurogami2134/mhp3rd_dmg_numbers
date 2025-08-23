@@ -57,10 +57,10 @@ TAIL_FRAMES equ     4
 ; AFTER noise, BEFORE clamping.
 ;  • X semantics: positive moves LEFT (counteracts the default “noise-right” drift)
 ;  • Y semantics: positive moves DOWN (negative moves UP)
-NOISE_STEP    equ   3           ; (pixels per step) e.g., step=3 → 0,3,6,…
-NOISE_STEPS   equ   6           ; bins 0..6 → up to 18 px of jitter
+NOISE_STEP    equ   5           ; (pixels per step) e.g., step=3 → 0,3,6,…
+NOISE_STEPS   equ   4           ; bins 0..6 → up to 18 px of jitter
 NOISE_FIX_X   equ   12          ; + => shift left;  − => shift right
-NOISE_FIX_Y   equ   -45         ; + => shift down; − => shift up
+NOISE_FIX_Y   equ   -35         ; + => shift down; − => shift up
 
 ; ---------------- Screen and clamp parameters --------------------------------
 ; For stock PSP: 480x272. We clamp inside a margin to avoid half-clipped glyphs.
@@ -156,7 +156,6 @@ create_print:
     ; Keep the spawn inside the visible area, considering a safety margin.
     jal         clamp_initial_pos
     nop
-
 
     ; We use a small “coarse noise” to avoid perfect overlap of digits when
     ; multiple hits land at the same place. The noise is unidirectional by
