@@ -1,5 +1,5 @@
 ; -----------------------------------------------------------------------------
-;  Monster Hunter Portable 3rd – Damage Numbers (PSP/TempAR)
+;  Monster Hunter Portable 3rd – Damage Numbers
 ;  This blob is placed at LOAD_ADD and provides:
 ;   - A hook ("add") that captures damage events and creates a per-hit print slot
 ;   - A tiny per-frame “engine” that animates numbers with a bounce, size and tail color sequence
