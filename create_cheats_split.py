@@ -15,19 +15,13 @@ BYTES_PER_PART = MAX_LINES * 4
 # Split prints.bin into contiguous chunks
 parts = []
 offset = 0
-while offset < len(prints_blob):
-    chunk = prints_blob[offset:offset + BYTES_PER_PART]
-    addr  = LOAD_ADD + offset
-    parts.append((addr, chunk))
-    offset += BYTES_PER_PART
-
 # Write cheats.txt
-with CwCheatIO("bin/cheats.txt") as cw:
-    total = len(parts)
-    for i, (addr, payload) in enumerate(parts, 1):
-        cw.write(f"DMG NUMBERS [PART {i}/{total}]")
-        cw.seek(addr)
-        cw.write_once(payload)
+with CwCheatIO("cheats.txt") as cw:
+    total = len(prints_blob) // BYTES_PER_PART + 1
+    cw.seek(LOAD_ADD)
+    for i in range(total):
+        cw.write(f"DMG NUMBERS [PART {i+1}/{total}]")
+        cw.write_once(prints_blob[i*BYTES_PER_PART:(i+1)*BYTES_PER_PART])
 
     cw.write("DMG NUMBERS [HOOKS]")
     cw.seek(MAIN_HOOK)
