@@ -57,9 +57,9 @@ TAIL_FRAMES equ     4
 ; AFTER noise, BEFORE clamping.
 ;  • X semantics: positive moves LEFT (counteracts the default “noise-right” drift)
 ;  • Y semantics: positive moves DOWN (negative moves UP)
-NOISE_STEP    equ   5           ; (pixels per step) e.g., step=3 → 0,3,6,…
-NOISE_STEPS   equ   4           ; bins 0..6 → up to 18 px of jitter
-NOISE_FIX_X   equ   12          ; + => shift left;  − => shift right
+NOISE_STEP    equ   5           ; (pixels per step) e.g., step=5 → 0,5,10,…
+NOISE_STEPS   equ   4           ; bins 0..4 → up to 20 px of jitter (4 steps of 5px each)
+NOISE_FIX_X   equ   10          ; + => shift left;  − => shift right (default half of NOISE_STEP * NOISE_STEPS)
 NOISE_FIX_Y   equ   -35         ; + => shift down; − => shift up
 
 ; ---------------- Screen and clamp parameters --------------------------------
