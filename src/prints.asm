@@ -384,10 +384,6 @@ check_ret:
     ;  • if (remaining_frames > TAIL_FRAMES) → use base_color
     ;  • else idx = (TAIL_FRAMES - remaining_frames) ∈ [0..TAIL_FRAMES-1],
     ;    pick from palette for WHITE/YELLOW/RED; fallback = base_color
-    ;  Palettes:
-    ;    WHITE  : 00, FF, 09, FF, 2A
-    ;    YELLOW : 12, FF, 0B, FF, 2C
-    ;    RED    : 13, FF, 37, FF, 08
     ; ------------------------------------------------------------------
     lb          t9, 0x6(at)             ; t9 = base_color
     li          t6, TAIL_FRAMES
@@ -623,7 +619,7 @@ clamp_initial_pos:
     nop
 
 ; -----------------------------------------------------------------------------
-; Tail palettes (3 items per base color; TAIL_FRAMES must match list length)
+; Tail palettes (TAIL_FRAMES must match list length)
 ; -----------------------------------------------------------------------------
 white_palette:
     .byte   0x00, 0x2A, 0x09, 0x0A
