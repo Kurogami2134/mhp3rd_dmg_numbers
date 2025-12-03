@@ -150,11 +150,11 @@ add:
 
 create_print:
     ; Get screen-space XY from the monster’s world/anim position
-    jal         get_coords
+    bal         get_coords
     nop
 
     ; Keep the spawn inside the visible area, considering a safety margin.
-    jal         clamp_initial_pos
+    bal         clamp_initial_pos
     nop
 
     ; We use a small “coarse noise” to avoid perfect overlap of digits when
@@ -167,7 +167,7 @@ create_print:
     srl         t9, t0, 3
 
     ; --- X noise: base + bin*NOISE_STEP, then shift by FIX to the *left* if >0
-    jal         rng                            ; s1 = 0..15 (from high nibble)
+    bal         rng                            ; s1 = 0..15 (from high nibble)
     nop
     ; mixX = (idx*7 + 3) & 0xFF  → inexpensive “salt” per slot
     li          t7, 7
@@ -196,7 +196,7 @@ create_print:
     sh          s1, 0x0(s0)                   ; x initial
 
     ; --- Y noise: base - bin*NOISE_STEP  (i.e., push UP) + Y FIX
-    jal         rng
+    bal         rng
     nop
     ; mixY = (idx*11 + 5) & 0xFF
     li          t7, 11
@@ -303,7 +303,7 @@ check_n_enable:
     sw          at, 0x0(s0)                  ; patch hook
     sw          zero, 0x4(s0)                ; NOP delay slot (safety)
 @@add_skip:
-    j           check_ret
+    b           check_ret
     nop
 
 ; =============================================================================
@@ -642,5 +642,7 @@ fmt:
 ; address this as a byte buffer, each slot is 8 bytes as described on top.
 ; -----------------------------------------------------------------------------
 printdata:
+.area MAX_NUMBERS * 8, 0x00
+.endarea
 
 .close

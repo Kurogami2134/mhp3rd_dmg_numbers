@@ -7,7 +7,7 @@ MAIN_RET        equ 0x088EBAB8
 printf          equ 0x088EAA64
 player_area     equ 0x08B24979
 ViewMatrix      equ 0x09B486B0
-LOAD_ADD        equ 0x09F00400
+LOAD_ADD        equ 0x08801B60
 
 CHECK           equ 0x09C1EC70
 ADD_HOOK        equ 0x09C750FC
