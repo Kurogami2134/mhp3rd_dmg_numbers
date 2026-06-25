@@ -25,3 +25,24 @@ PRINT_SETTINGS  equ 0x09EE2350
 .word MAIN_HOOK
 .word LOAD_ADD
 .close
+
+.createfile "../bin/dmg_num.bin", 0
+.ascii "0.01"
+
+.word 1
+.word @main_block_end - @main_block
+.ascii "DMGN"
+@main_block:
+.import "../bin/prints.bin"
+@main_block_end:
+
+.word 2
+.word MAIN_HOOK
+.halfword main - LOAD_ADD
+.byte 0xC
+.byte 0
+
+.word -1
+
+.asciiz "Damage Numbers Display - Kurogami2134"
+.close

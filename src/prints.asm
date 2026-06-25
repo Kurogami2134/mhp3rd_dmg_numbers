@@ -72,22 +72,23 @@ Y_MIN         equ   CLAMP_MARGIN
 X_MAX         equ   (SCREEN_W - CLAMP_MARGIN)
 Y_MAX         equ   (SCREEN_H - CLAMP_MARGIN)
 
-; -----------------------------------------------------------------------------
-; Small helpers for loading immediates from absolute addresses (armips style)
-; -----------------------------------------------------------------------------
-.macro liw,dest,value
-    .if (value & 0xFFFF) > 0xFFFF/2
-        lui			at, value / 0x10000 + 0x1
-    .else
-        lui			at, value / 0x10000
-    .endif
-	lw			dest, value & 0xFFFF(at)
-.endmacro
 
-.macro lib,dest,value
-	lui			at, value / 0x10000
-	lb			dest, value & 0xFFFF(at)
-.endmacro
+white_palette   equ white_palette_ - MOD_DATA
+yellow_palette  equ yellow_palette_ - MOD_DATA
+red_palette     equ red_palette_ - MOD_DATA
+seed            equ seed_ - MOD_DATA
+BOUNCE_TABLE    equ BOUNCE_TABLE_ - MOD_DATA
+last            equ last_ - MOD_DATA
+fmt             equ fmt_ - MOD_DATA
+printdata       equ printdata_ - MOD_DATA
+
+; -----------------------------------------------------------------------------
+; Bounce animation (data-driven)
+;  • Negative values move the number UP (because 2D Y grows downward on screen).
+;  • Table indexed by “age” (1-based). If age > BOUNCE_LEN, deltaY = 0.
+;  • Kept short and symmetric. Tweak here without changing code.
+; -----------------------------------------------------------------------------
+BOUNCE_LEN    equ   11
 
 ; -----------------------------------------------------------------------------
 ; We start emitting the code/data blob for the cheat at LOAD_ADD.
@@ -98,25 +99,6 @@ Y_MAX         equ   (SCREEN_H - CLAMP_MARGIN)
 ; “padding eater”: if we ever need a placeholder, it’s easy to track in the dump).
 .word 0x2134
 
-; -----------------------------------------------------------------------------
-; Bounce animation (data-driven)
-;  • Negative values move the number UP (because 2D Y grows downward on screen).
-;  • Table indexed by “age” (1-based). If age > BOUNCE_LEN, deltaY = 0.
-;  • Kept short and symmetric. Tweak here without changing code.
-; -----------------------------------------------------------------------------
-BOUNCE_LEN    equ   11
-;            age:   1,   2,   3,    4,    5,    6,    7,    8,   9,   10,  11
-BOUNCE_TABLE:
-    .hword      0,  -2,  -5,  -10,  -15,  -20,  -15,  -10,  -5,  -2,   0
-.align 4                      ; Keep subsequent MIPS instructions word-aligned
-
-; -----------------------------------------------------------------------------
-; `last` is the current ring index (0..MAX_NUMBERS-1), advanced after each add.
-; We multiply by 8 (slot size) to get the byte offset into printdata.
-; -----------------------------------------------------------------------------
-last:
-    .word       0
-
 ; =============================================================================
 ; add(a0=monster*, a1=?, a2=?, v0=damage)
 ; Hook entry called from the injected trampoline when a damage event occurred.
@@ -126,13 +108,14 @@ add:
     beq         v0, zero,  @skip_add        ; ignore zero-damage events (rare)
     nop
     ; Save a minimal register set. We’re inside foreign code; be conservative.
-    addiu       sp, sp, -0x18
+    addiu       sp, sp, -0x1C
     sw          s0, 0x00(sp)
     sw          s1, 0x04(sp)
     sw          t0, 0x08(sp)
     sw          a0, 0x0C(sp)
     sw          a1, 0x10(sp)
     sw          a2, 0x14(sp)
+    sw          s2, 0x18(sp)
 
     ; Filter: only print damage for the local player’s current area/camp, to
     ; avoid UI spam from off-screen entities. This mirrors the original mod.
@@ -142,10 +125,16 @@ add:
     bne         a1, a2, @ret
     nop
 
+    bal         @@get_offset
+    nop
+@@get_offset:
+    addiu       s2, ra, (MOD_DATA - @@get_offset)
+
+
     ; Compute slot pointer: s0 = &printdata[ last * 8 ]
-    liw         t0, last
+    lw          t0, last(s2)
     sll         t0, t0, 0x3
-    li          s0, printdata
+    addiu       s0, s2, printdata
     addu        s0, s0, t0
 
 create_print:
@@ -237,19 +226,19 @@ create_print:
     beql        at, zero, @@use_yellow
     nop
 @@use_white:
-    li          t3, white_palette
+    addiu       t3, s2, white_palette
     lbu         t1, 0(t3)                      ; t1 = white_palette[0]
     or          s1, s1, t1
     b           @@color_done
     nop
 @@use_yellow:
-    li          t3, yellow_palette
+    addiu       t3, s2, yellow_palette
     lbu         t1, 0(t3)                      ; t1 = yellow_palette[0]
     or          s1, s1, t1
     b           @@color_done
     nop
 @@use_red:
-    li          t3, red_palette
+    addiu       t3, s2, red_palette
     lbu         t1, 0(t3)                      ; t1 = red_palette[0]
     or          s1, s1, t1
 @@color_done:
@@ -262,7 +251,7 @@ create_print:
     nop
     li          s1, 0
 @ret:
-    li          s0, last
+    addiu       s0, s2, last
     sw          s1, 0x0(s0)
 
     ; Epilogue
@@ -272,7 +261,8 @@ create_print:
     lw          a0, 0x0C(sp)
     lw          a1, 0x10(sp)
     lw          a2, 0x14(sp)
-    addiu       sp, sp, 0x18
+    lw          s2, 0x18(sp)
+    addiu       sp, sp, 0x1C
 @skip_add:
     ; Return to the original code (addresses wired by the outer patcher)
     li          ra, ADD_RA
@@ -295,8 +285,12 @@ check_n_enable:
     bnel        at, zero, @@n_skip
     sw          zero, 0x0(s0)                ; clear one-shot CHECK
 @@n_skip:
+    lui         s0, 0x0800
+    addiu       at, s1, (add - MOD_DATA)
+    srl         at, at, 2
+    or          at, s0, at
     li          s0, ADD_HOOK
-    li          at, 0x0A000000 | (add/4)     ; J-type opcode to our 'add'
+
     lw          a0, 0x0(s0)
     beq         a0, at, @@add_skip
     nop
@@ -311,9 +305,16 @@ check_n_enable:
 ;  • Calls check_n_enable, then iterates all slots and draws/animates them.
 ; =============================================================================
 main:
-    addiu       sp, sp, -0x8
+    addiu       sp, sp, -0xC
     sw          s0, 0x0(sp)
     sw          ra, 0x4(sp)
+    sw          s1, 0x8(sp)
+
+    bal         @@get_offset
+    nop
+@@get_offset:
+    addiu       s1, ra, (MOD_DATA - @@get_offset)
+
     b           check_n_enable
     nop
 
@@ -326,7 +327,7 @@ main:
 ; =============================================================================
 check_ret:
     li          s0, MAX_NUMBERS
-    li          at, printdata
+    addiu       at, s1, printdata
 
 @loop:
     ; Skip inactive slots
@@ -357,7 +358,7 @@ check_ret:
     nop
     addiu       t6, t0, -1                   ; index = age-1 (0-based)
     sll         t6, t6, 1                    ; *2 (halfword addressing)
-    li          t7, BOUNCE_TABLE
+    addiu       t7, s1, BOUNCE_TABLE
     addu        t7, t7, t6
     lh          t1, 0x0(t7)                  ; deltaY from table
     b           @bounce_done
@@ -399,15 +400,15 @@ check_ret:
     li          t0, TAIL_FRAMES-1       ; clamp para o último item (4)
 @idx_ok:
     ; dispatch for **first item** of each pallet (constant agnostic)
-    li          t3, white_palette
+    addiu       t3, s1, white_palette
     lbu         t1, 0(t3)              ; white head
     beq         t9, t1, @pal_white
     nop
-    li          t3, yellow_palette
+    addiu       t3, s1, yellow_palette
     lbu         t1, 0(t3)              ; yellow head
     beq         t9, t1, @pal_yellow
     nop
-    li          t3, red_palette
+    addiu       t3, s1, red_palette
     lbu         t1, 0(t3)              ; red head
     beq         t9, t1, @pal_red
     nop
@@ -416,21 +417,21 @@ check_ret:
     b           @color_apply
     nop
 @pal_white:
-    li          t3, white_palette
+    addiu       t3, s1, white_palette
     addu        t3, t3, t0
     lbu         t1, 0x0(t3)
     b           @color_apply
     nop
 
 @pal_yellow:
-    li          t3, yellow_palette
+    addiu       t3, s1, yellow_palette
     addu        t3, t3, t0
     lbu         t1, 0x0(t3)
     b           @color_apply
     nop
 
 @pal_red:
-    li          t3, red_palette
+    addiu       t3, s1, red_palette
     addu        t3, t3, t0
     lbu         t1, 0x0(t3)
     b           @color_apply
@@ -445,7 +446,7 @@ check_ret:
 @draw:
     ; printf("%d", value) at the prepared position / style in PRINT_SETTINGS
     move        a0, t8
-    li          a1, fmt
+    addiu       a1, s1, fmt
     lh          a2, 0x4(at)
     jal         printf
     nop
@@ -460,11 +461,12 @@ end:
     ; Return to original main
     lw          s0, 0x0(sp)
     lw          ra, 0x4(sp)
+    lw          s1, 0x8(sp)
     li          a0, PRINT_SETTINGS
     li          a1, 0x0
     li          a2, 0x1
     j           MAIN_RET
-    addiu       sp, sp, 0x8
+    addiu       sp, sp, 0xC
 
 ; -----------------------------------------------------------------------------
 ; RNG: very small 8-bit LCG-like step
@@ -472,17 +474,14 @@ end:
 ;   return s1 = seed >> 4  (upper nibble in 0..15)
 ; This keeps it cheap and good enough for “visual jitter”. We also mix per-slot.
 ; -----------------------------------------------------------------------------
-seed:
-    .word       149
 
 rng:
-    liw         at, seed
+    lw          at, seed(s2)
     sll         s1, at, 0x4
     addu        s1, s1, at
     addiu       s1, 0x16
     andi        s1, s1, 0xFF
-    li          at, seed
-    sw          s1, 0x0(at)
+    sw          s1, seed(s2)
     srl         s1, s1, 0x4
     jr          ra
     nop
@@ -618,22 +617,41 @@ clamp_initial_pos:
     jr          ra
     nop
 
+
+MOD_DATA:
+
+;            age:   1,   2,   3,    4,    5,    6,    7,    8,   9,   10,  11
+BOUNCE_TABLE_:
+    .hword      0,  -2,  -5,  -10,  -15,  -20,  -15,  -10,  -5,  -2,   0
+.align 4                      ; Keep subsequent MIPS instructions word-aligned
+
+; -----------------------------------------------------------------------------
+; `last` is the current ring index (0..MAX_NUMBERS-1), advanced after each add.
+; We multiply by 8 (slot size) to get the byte offset into printdata.
+; -----------------------------------------------------------------------------
+last_:
+    .word       0
+
 ; -----------------------------------------------------------------------------
 ; Tail palettes (TAIL_FRAMES must match list length)
 ; -----------------------------------------------------------------------------
-white_palette:
+white_palette_:
     .byte   0x00, 0x2A, 0x09, 0x0A
 
-yellow_palette:
+yellow_palette_:
     .byte   0x12, 0x3A, 0x2C, 0x0C
 
-red_palette:
+red_palette_:
     .byte   0x13, 0x20, 0x0D, 0xC2
+
+seed_:
+    .word       149
+
 
 ; -----------------------------------------------------------------------------
 ; printf format (kept separate to make it trivial to try "%03d", "%4d", etc.)
 ; -----------------------------------------------------------------------------
-fmt:
+fmt_:
     .asciiz     "%d"
     .align      4
 
@@ -641,8 +659,8 @@ fmt:
 ; printdata – slot array starts here. Runtime writes (add/check_ret) will
 ; address this as a byte buffer, each slot is 8 bytes as described on top.
 ; -----------------------------------------------------------------------------
-printdata:
-.area MAX_NUMBERS * 8, 0x00
+printdata_:
+.area (MAX_NUMBERS+1) * 8, 0x00
 .endarea
 
 .close
